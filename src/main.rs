@@ -2,13 +2,19 @@ use ggez;
 use rand;
 
 use ggez::event::{KeyCode, KeyMods};
-use ggez::{event, graphics, Context, GameResult};
+use ggez::{ event,
+            graphics::{self, DrawParam},
+            Context,
+            GameResult};
 
 use std::collections::LinkedList;
 use std::time::{Duration, Instant};
+use std::env;
+use std::path;
+use ggez::mint::Point2;
+
 
 use rand::Rng;
-
 
 const GRID_SIZE: (i16, i16) = (30, 20);
 const GRID_CELL_SIZE: (i16, i16) = (40, 40);
@@ -18,8 +24,9 @@ const SCREEN_SIZE: (f32, f32) = (
     GRID_SIZE.1 as f32 * GRID_CELL_SIZE.1 as f32,
 );
 
-const UPDATES_PER_SECOND: f32 = 8.0;
+const UPDATES_PER_SECOND: f32 = 10.0;
 const MILLIS_PER_UPDATE: u64 = (1.0 / UPDATES_PER_SECOND * 1000.0) as u64;
+
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 struct GridPosition {
@@ -47,11 +54,11 @@ impl GridPosition {
         GridPosition { x, y }
     }
 
-    pub fn random(max_x: i16, max_y: i16) -> Self {
+    pub fn random(min_x: i16, min_y: i16, max_x: i16, max_y: i16) -> Self {
         let mut rng = rand::thread_rng();
         (
-            rng.gen_range::<i16, i16, i16>(0, max_x),
-            rng.gen_range::<i16, i16, i16>(0, max_y),
+            rng.gen_range::<i16, i16, i16>(min_x, max_x),
+            rng.gen_range::<i16, i16, i16>(min_y, max_y),
         )
         .into()
     }
@@ -62,6 +69,7 @@ impl GridPosition {
             Direction::Down => GridPosition::new(pos.x, (pos.y + 1).modulo(GRID_SIZE.1)),
             Direction::Left => GridPosition::new((pos.x - 1).modulo(GRID_SIZE.0), pos.y),
             Direction::Right => GridPosition::new((pos.x + 1).modulo(GRID_SIZE.0), pos.y),
+            Direction::None => GridPosition::new(pos.x, pos.y),
         }
     }
 }
@@ -83,6 +91,15 @@ impl From<(i16, i16)> for GridPosition {
     }
 }
 
+impl From<GridPosition> for Point2<f32> {
+    fn from(pos: GridPosition) -> Self {
+        Point2 {
+            x: pos.x as f32 * GRID_CELL_SIZE.0 as f32,
+            y: pos.y as f32 * GRID_CELL_SIZE.1 as f32,
+        }
+    }
+}
+
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Direction {
@@ -90,6 +107,7 @@ enum Direction {
     Down,
     Left,
     Right,
+    None,
 }
 
 impl Direction {
@@ -100,6 +118,7 @@ impl Direction {
             Direction::Down => Direction::Up,
             Direction::Left => Direction::Right,
             Direction::Right => Direction::Left,
+            _ => Direction::None,
         }
     }
 
@@ -117,59 +136,64 @@ impl Direction {
 #[derive(Clone, Copy, Debug)]
 struct Segment {
     pos: GridPosition,
+    dir: Direction,
 }
 
 impl Segment {
-    pub fn new(pos: GridPosition) -> Self {
-        Segment { pos }
+    pub fn new(pos: GridPosition, dir: Direction) -> Self {
+        Segment { pos, dir }
     }
 }
 
 struct Food {
     pos: GridPosition,
+    image: graphics::Image,
 }
 
 impl Food {
-    pub fn new(pos: GridPosition) -> Self {
-        Food { pos }
+    pub fn new(pos: GridPosition, ctx: &mut Context) -> GameResult<Food> {
+        let image = graphics::Image::new(ctx, "/mouse.png")?;
+        let s = Food { pos, image };
+        Ok(s)
     }
 
-    /// Note: this method of drawing does not scale. If you need to render
-    /// a large number of shapes, use a SpriteBatch. This approach is fine for
-    /// this example since there are a fairly limited number of calls.
-    fn draw(&self, ctx: &mut Context) -> GameResult<()> {
-
-        let color = [0.0, 0.0, 1.0, 1.0].into();
-
-        let rectangle =
-            graphics::Mesh::new_rectangle(ctx, graphics::DrawMode::fill(), self.pos.into(), color)?;
-        graphics::draw(ctx, &rectangle, (ggez::mint::Point2 { x: 0.0, y: 0.0 },))
+    fn draw(&self, ctx: &mut Context) -> GameResult {
+        let pnt2: Point2<f32> = self.pos.into();
+        graphics::draw(ctx, &self.image, (pnt2,))?;
+        Ok(())
     }
 }
 
 struct Wall {
     list: LinkedList<Segment>,
+    image: graphics::Image,
 }
 
 impl Wall {
-    pub fn new() -> Self{
+    pub fn new(ctx: &mut Context) -> GameResult<Wall> {
         let mut list = LinkedList::new();
-        list.push_back(Segment::new((20 as i16, 10 as i16).into()));
-        Wall {
-            list,
+        for i in 0..GRID_SIZE.0{
+            for j in 0..GRID_SIZE.1{
+                if i == 0 || j==0 || i+1 == GRID_SIZE.0 || j+1 == GRID_SIZE.1{
+                    list.push_back(Segment::new((i as i16, j as i16).into(), Direction::None));
+                }
+            }
         }
+
+        let image = graphics::Image::new(ctx, "/wall.jpg")?;
+
+        let s = Wall {
+            list,
+            image: image,
+        };
+
+        Ok(s)
     }
 
     fn draw(&self, ctx: &mut Context) -> GameResult<()> {
         for seg in self.list.iter() {
-
-            let rectangle = graphics::Mesh::new_rectangle(
-                ctx,
-                graphics::DrawMode::fill(),
-                seg.pos.into(),
-                [0.0, 1.0, 1.0, 1.0].into(),
-            )?;
-            graphics::draw(ctx, &rectangle, (ggez::mint::Point2 { x: 0.0, y: 0.0 },))?;
+            let pnt2: Point2<f32> = seg.pos.into();
+            graphics::draw(ctx, &self.image, (pnt2,))?;
         }
         Ok(())
     }
@@ -189,24 +213,38 @@ struct Snake {
     head: Segment,
     dir: Direction,
     body: LinkedList<Segment>,
+    tail: Segment,
     ate: Option<Ate>,
     last_update_dir: Direction,
     next_dir: Option<Direction>,
+    head_image: graphics::Image,
+    body_image: graphics::Image,
+    turn_body_image: graphics::Image,
+    tail_image: graphics::Image,
 }
 
 impl Snake {
-    pub fn new(pos: GridPosition) -> Self {
-        let mut body = LinkedList::new();
+    pub fn new(pos: GridPosition, ctx: &mut Context) -> GameResult<Snake> {
+        let body = LinkedList::new();
+        let head_image = graphics::Image::new(ctx, "/shead.png")?;
+        let body_image = graphics::Image::new(ctx, "/sbody.png")?;
+        let turn_body_image = graphics::Image::new(ctx, "/sturn.png")?;
+        let tail_image = graphics::Image::new(ctx, "/send.png")?;
 
-        body.push_back(Segment::new((pos.x - 1, pos.y).into()));
-        Snake {
-            head: Segment::new(pos),
+        let s = Snake {
+            head: Segment::new(pos, Direction::Right),
             dir: Direction::Right,
             last_update_dir: Direction::Right,
             body: body,
+            tail: Segment::new((pos.x - 1, pos.y).into(), Direction::Right),
             ate: None,
-            next_dir: None
-        }
+            next_dir: None,
+            head_image: head_image,
+            body_image: body_image,
+            turn_body_image: turn_body_image,
+            tail_image: tail_image,
+        };
+        Ok(s)
     }
 
     fn eats(&self, food: &Food) -> bool {
@@ -244,8 +282,8 @@ impl Snake {
         }
 
         let new_head_pos = GridPosition::new_from_move(self.head.pos, self.dir);
-        let new_head = Segment::new(new_head_pos);
-        self.body.push_front(self.head);
+        let new_head = Segment::new(new_head_pos, self.dir);
+        self.body.push_back(self.head.clone());
         self.head = new_head;
         if self.eats_self() {
             self.ate = Some(Ate::Itself);
@@ -258,35 +296,110 @@ impl Snake {
         }
 
         if let None = self.ate {
-            self.body.pop_back();
+            self.tail = self.body.front().unwrap().clone();
+            self.body.pop_front();
+            if self.body.is_empty(){
+                self.tail.dir = self.head.dir;
+            }else{
+                self.tail.dir = self.body.front().unwrap().dir;
+            }
         }
 
         self.last_update_dir = self.dir;
     }
 
-
-    /// example, but larger scale games will likely need a more optimized render path
-    /// using SpriteBatch or something similar that batches draw calls.
     fn draw(&self, ctx: &mut Context) -> GameResult<()> {
+
+        let drawparam = DrawParam::default();
+
+        let mut iter = self.body.iter();
+        iter.next();
         for seg in self.body.iter() {
-            let rectangle = graphics::Mesh::new_rectangle(
-                ctx,
-                graphics::DrawMode::fill(),
-                seg.pos.into(),
-                [0.3, 0.3, 0.0, 1.0].into(),
-            )?;
-            graphics::draw(ctx, &rectangle, (ggez::mint::Point2 { x: 0.0, y: 0.0 },))?;
+            let next_seg = iter.next();
+            let dir = next_seg.unwrap_or(&self.head).dir;
+            let pnt2: Point2<f32> = seg.pos.into();
+
+            if dir != seg.dir{
+                let param = get_param_for_turned(seg.dir, dir);
+                graphics::draw(ctx, &self.turn_body_image, drawparam.rotation(param.0).offset(param.1).dest(pnt2))?;
+            }else{
+                let param = get_param(dir);
+                graphics::draw(ctx, &self.body_image, drawparam.rotation(param.0).offset(param.1).dest(pnt2))?;
+            }
         }
 
-        let rectangle = graphics::Mesh::new_rectangle(
-            ctx,
-            graphics::DrawMode::fill(),
-            self.head.pos.into(),
-            [1.0, 0.5, 0.0, 1.0].into(),
-        )?;
-        graphics::draw(ctx, &rectangle, (ggez::mint::Point2 { x: 0.0, y: 0.0 },))?;
+        let mut param = get_param(self.dir);
+        let mut pnt2: Point2<f32> = self.head.pos.into();
+        graphics::draw(ctx, &self.head_image, drawparam.rotation(param.0).offset(param.1).dest(pnt2))?;
+
+        pnt2 = self.tail.pos.into();
+        param = get_param(self.tail.dir);
+        graphics::draw(ctx, &self.tail_image, drawparam.rotation(param.0).offset(param.1).dest(pnt2))?;
+
         Ok(())
     }
+}
+
+fn get_param(dir: Direction) -> (f32, Point2<f32>){
+        let mut offset = Point2 {x:0.0, y:0.0};
+        let mut rotation = 0.0;
+        match dir {
+            Direction::Down => {
+                offset = Point2 {x:0.98, y:0.98};
+                rotation = std::f32::consts::PI;
+            },
+            Direction::Right => {
+                offset = Point2 {x:0.0, y:1.0};
+                rotation = std::f32::consts::PI/2.0;
+            },
+            Direction::Left => {
+                offset = Point2 {x:1.0, y:0.0};
+                rotation = -std::f32::consts::PI/2.0;
+            }
+            _ => {},
+        }
+        (rotation, offset)
+}
+
+fn get_param_for_turned(mydir: Direction, nextdir: Direction) -> (f32, Point2<f32>){
+        let mut offset = Point2 {x:0.0, y:0.0};
+        let mut rotation = 0.0;
+        match nextdir {
+            Direction::Up => {
+                if mydir == Direction::Right{
+                    offset = Point2 {x:0.98, y:0.98};
+                    rotation = std::f32::consts::PI;
+                }else if mydir == Direction::Left {
+                    offset = Point2 {x:1.0, y:0.0};
+                    rotation = -std::f32::consts::PI/2.0;
+                }
+            },
+            Direction::Right => {
+                if mydir == Direction::Down{
+                    offset = Point2 {x:1.0, y:0.0};
+                    rotation = -std::f32::consts::PI/2.0;
+                }
+            },
+            Direction::Left => {
+                if mydir == Direction::Down{
+                    offset = Point2 {x:0.98, y:0.98};
+                    rotation = std::f32::consts::PI;
+                }else if mydir == Direction::Up{
+                    offset = Point2 {x:0.0, y:1.0};
+                    rotation = std::f32::consts::PI/2.0;
+                }
+            }
+            Direction::Down => {
+                if mydir == Direction::Right {
+                    offset = Point2 {x: 0.0, y:1.0};
+                    rotation = std::f32::consts::PI/2.0;
+                } else if mydir == Direction::Left {
+                    offset = Point2 {x: -0.02, y:0.0};
+                }
+            }
+            _ => {},
+        }
+        (rotation, offset)
 }
 
 
@@ -296,25 +409,43 @@ struct GameState {
     walls: Wall,
     gameover: bool,
     last_update: Instant,
+    floor_image: graphics::Image,
 }
 
 impl GameState {
 
-    pub fn new() -> Self {
+    pub fn new(ctx: &mut Context) -> GameResult<GameState> {
 
         let snake_pos = (GRID_SIZE.0 / 4, GRID_SIZE.1 / 2).into();
-        let food_pos = GridPosition::random(GRID_SIZE.0, GRID_SIZE.1);
+        let food_pos = GridPosition::random(1, 1, GRID_SIZE.0 - 1, GRID_SIZE.1 - 1);
+        let image = graphics::Image::new(ctx, "/floor.png")?;
 
-        GameState {
-            snake: Snake::new(snake_pos),
-            food: Food::new(food_pos),
-            walls: Wall::new(),
+
+        let s = GameState {
+            snake: Snake::new(snake_pos, ctx).unwrap(),
+            food: Food::new(food_pos, ctx).unwrap(),
+            walls: Wall::new(ctx).unwrap(),
             gameover: false,
             last_update: Instant::now(),
+            floor_image: image,
+        };
+
+        Ok(s)
+    }
+
+    fn draw_floor(&mut self, ctx: &mut Context) -> GameResult {
+        for i in 0..GRID_SIZE.0{
+            for j in 0..GRID_SIZE.1{
+                if i > 0 || j > 0 || i+1 < GRID_SIZE.0 || j+1 < GRID_SIZE.1{
+                    let gp: GridPosition = (i as i16, j as i16).into();
+                    let pnt2: ggez::mint::Point2<f32> = gp.into();
+                    graphics::draw(ctx, &self.floor_image, (pnt2,))?;
+                }
+            }
         }
+        Ok(())
     }
 }
-
 
 impl event::EventHandler for GameState {
 
@@ -328,7 +459,7 @@ impl event::EventHandler for GameState {
                 if let Some(ate) = self.snake.ate {
                     match ate {
                         Ate::Food => {
-                            let new_food_pos = GridPosition::random(GRID_SIZE.0, GRID_SIZE.1);
+                            let new_food_pos = GridPosition::random(1, 1, GRID_SIZE.0 - 1, GRID_SIZE.1 - 1);
                             self.food.pos = new_food_pos;
                         }
                         Ate::Itself | Ate::Wall => {
@@ -346,7 +477,8 @@ impl event::EventHandler for GameState {
 
     fn draw(&mut self, ctx: &mut Context) -> GameResult {
 
-        graphics::clear(ctx, [0.0, 1.0, 0.0, 1.0].into());
+        graphics::clear(ctx, [0.0, 0.0, 0.0, 0.0].into());
+        //self.draw_floor(ctx)?;
         self.snake.draw(ctx)?;
         self.food.draw(ctx)?;
         self.walls.draw(ctx)?;
@@ -375,12 +507,22 @@ impl event::EventHandler for GameState {
 }
 
 fn main() -> GameResult {
+
+    let resource_dir = if let Ok(manifest_dir) = env::var("CARGO_MANIFEST_DIR") {
+        let mut path = path::PathBuf::from(manifest_dir);
+        path.push("resources");
+        path
+    } else {
+        path::PathBuf::from("./resources")
+    };
+
     let (ctx, events_loop) = &mut ggez::ContextBuilder::new("Snake in Rust", "Bartosz Jaśkiewicz")
+        .add_resource_path(resource_dir)
         .window_setup(ggez::conf::WindowSetup::default().title("Snake"))
         .window_mode(ggez::conf::WindowMode::default().dimensions(SCREEN_SIZE.0, SCREEN_SIZE.1))
         .build()?;
 
-    let state = &mut GameState::new();
+    let state = &mut GameState::new(ctx).unwrap();
 
     event::run(ctx, events_loop, state)
 }
