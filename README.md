@@ -1,7 +1,7 @@
-# The Snake in Rust
+# Snake in Rust
 
-It's a simple Snake game written in Rust using ggez library.\
-The game was created as a project on the Rust Language course at the Institute of Computer Science of the University of Wroclaw.
+This is a simple Snake game written in Rust using ggez library.\
+The game was created as a project for the Rust Language course at the Institute of Computer Science of the University of Wroclaw.
 
 ## Rules
 
