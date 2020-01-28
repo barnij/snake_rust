@@ -140,7 +140,7 @@ impl event::EventHandler for GameState {
                 if let Some(ate) = self.snake.ate {
                     match ate {
                         Ate::Food => {
-                            let new_food_pos = GridPosition::random(2, 3, GRID_SIZE.0 - 1, GRID_SIZE.1 - 1);
+                            let new_food_pos = GridPosition::random(3, 3, GRID_SIZE.0 - 1, GRID_SIZE.1 - 1);
                             self.food.pos = new_food_pos;
                             self.points += 1;
                         }

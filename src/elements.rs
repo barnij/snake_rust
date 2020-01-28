@@ -39,8 +39,12 @@ impl GridPosition {
 
     pub fn random(min_x: i16, min_y: i16, max_x: i16, max_y: i16) -> Self {
         let mut rng = rand::thread_rng();
+        let mut p: i16 = 0;
+        while p<2{
+            p = rng.gen_range::<i16, i16, i16>(min_x, max_x);
+        }
         (
-            rng.gen_range::<i16, i16, i16>(min_x, max_x),
+            p,
             rng.gen_range::<i16, i16, i16>(min_y, max_y),
         )
         .into()
