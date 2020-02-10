@@ -14,6 +14,7 @@ You are able to cross the board from one to the opposite site by holes in the wa
 Use the crate manager [cargo](https://crates.io/) to compile program.
 
 ```bash
+cargo build --bins
 cargo build
 ```
 
